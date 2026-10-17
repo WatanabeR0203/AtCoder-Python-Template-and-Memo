@@ -1,0 +1,27 @@
+#制約を見ましょう(1D Sugoroku, 魚の骨)
+#スタックなどを活用(1D puyopuyo, A, AB, ABC消すやつ)
+#数え上げで、f(R)-f(L)（Snake number, 尺取の">K" - ">=K", k桁の数の個数（x + y ≡ x + y))
+#中心から処理→リスト二本（キャンディのやつ、中央値のやつ）
+#だるそうだったら一旦楽できないか考える（ARARARARARARCRCRCRCRC)
+import math
+from collections import deque
+from itertools import groupby
+import bisect
+import heapq
+import sys
+input = sys.stdin.readline
+
+def Yes(x=True):
+    print("Yes" if x else "No")
+
+def YES(x=True):
+    print("YES" if x else "NO")
+
+def yes(x=True):
+    print("yes" if x else "no")
+
+ii   = lambda: int(input())
+mii  = lambda: map(int, input().split())
+lmii = lambda: list(mii())
+insp = lambda: input().split()
+
