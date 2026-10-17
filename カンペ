@@ -1,0 +1,747 @@
+#union finde(DSU)
+#全グループを返すやつだけ、O(n)。ほかはほぼ定数（逆アッカーマン関数）
+from atcoder.dsu import dsu
+# 5頂点のUnion-Findを作成 (0, 1, 2, 3, 4)
+uf = dsu(5)
+# 0と1、1と2を統合
+uf.merge(0, 1)
+uf.merge(1, 2)
+# 判定
+uf.same(0, 2)  # True
+uf.same(0, 3)  # False
+# リーダーとサイズ
+uf.leader(0)   # 0または1または2（代表元）
+uf.size(0)    # 3
+uf.groups()    # [[0, 1, 2], [3], [4]]
+
+#セグメント木
+#初期化 SegmentTree(列の長さ、単位元、関数)
+#最小値の場合、単位元=INF, 関数 = min
+from atcoder.segtree import SegTree
+seg = SegTree(op, e, v) #op：関数、e：単元、v：リスト
+seg = SegTree(op, e, n) #サイズだけ指定、全要素eで初期化
+seg.prod(l, r) #区間に対する操作
+seg.get(p) #1点取得
+seg.set(p, x) #1点更新a[p] = x
+seg.all_prod() #全区間の値
+seg.max_right(l, f) #条件を満たす最大rを返す。lは左端、fは関数
+seg.min_left(r, f) 
+
+#順序が無いモノイド
+#区間和、区間積、区間最小、区間最大、最大公倍数、排他的or、論理積、論理和
+
+#順序があるモノイド
+#ex.)文字列連結 op = lambda a, b: a + b
+
+
+#フェニック木
+
+from atcoder.fenwicktree import FenwickTree
+fw = FenwickTree(n) #配列サイズ
+fw.add(p, x)#1点加算 , a[p] += x
+fw.sum(l, r)#区間和
+fw.sum(p, p+1)#1点取得
+
+#bisect
+a=[1,2,2,2,3]
+
+bisect.bisect_left(a,2)
+1
+bisect.bisect_right(a,2)
+4
+bisect.bisect(a,2)
+4
+
+
+#二分探索
+
+ng = -1          # 条件を満たさないことが保証される
+ok = N           # 条件を満たすことが保証される
+
+while ok - ng > 1: #ok = ng + 2のとき、midはng+1でセーフ ngがokよりでかい場合は、ng - ok > 1
+    mid = (ok + ng) // 2
+    if cond(mid):
+        ok = mid
+    else:
+        ng = mid
+print(ok)
+
+d = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+d = [(-1, 0), (-1, -1), (0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1)]
+
+#リストのソート
+#元のリストを書き換える破壊的処理
+l.sort(reverse=True)
+
+#ソートされたリストを返す
+l_sorted = sorted(l)
+
+key=abs
+max(l, key=abs)
+
+sorted(l_str, key=len) #文字列とか
+
+#keyにはラムダ式もできる
+sorted(l_2d, key=lambda x: x[1])
+
+#回文数生成
+def gen_palindromes(n):
+    # 桁数ごと
+    d = 1
+    while True:
+        half_len = (d + 1) // 2
+        start = 10 ** (half_len - 1) if d > 1 else 1
+        end = 10 ** half_len
+
+        for x in range(start, end):
+            # 回文生成
+            res = x
+            t = x if d % 2 == 0 else x // 10
+            while t:
+                res = res * 10 + t % 10
+                t //= 10
+
+            if res > n:
+                return
+            yield res
+
+        d += 1
+#回文数生成　使用方法
+n = 950
+for p in gen_palindromes(n):
+    print(p)
+
+#deque
+from collections import deque
+def test_queue_deque():
+    q = deque()
+    q.append(1)
+    q.append(2)
+    q.append(3)
+    v = q.popleft()
+    assert v == 1
+
+#heapq
+import heapq  # heapqライブラリのimport
+
+a = [1, 6, 8, 0, -1]
+heapq.heapify(a)  # リストを優先度付きキューへ
+print(a)
+# 出力: [-1, 0, 8, 1, 6] (優先度付きキューとなった a)
+
+print(heapq.heappop(a))  # 最小値の取り出し
+# 出力: -1 (a の最小値)
+print(a)
+# 出力: [0, 1, 8, 6] (最小値を取り出した後の a)
+
+heapq.heappush(a, -2)  # 要素の挿入
+print(a)
+# 出力: [-2, 0, 1, 8, 6]  (-2 を挿入後の a)
+
+#ランレングス圧縮
+from itertools import groupby
+s = "aaabbcaaa"
+
+result = [(k, len(list(g))) for k, g in groupby(s)]
+print(result)
+# [('a', 3), ('b', 2), ('c', 1), ('a', 3)]
+
+
+# ========================================
+# 双方向連結リスト（配列実装）
+# ========================================
+# prev[i] : i の左
+# next[i] : i の右
+# -1 は存在しない
+N = 10
+prev = [-1] * N
+next = [-1] * N
+for i in range(N):
+    if i > 0:
+        prev[i] = i - 1
+    if i < N - 1:
+        next[i] = i + 1
+# i を削除
+def erase(i):
+    l = prev[i]
+    r = next[i]
+    if l != -1:
+        next[l] = r
+    if r != -1:
+        prev[r] = l
+# ========================================
+# add_right
+# i の右に x を挿入
+# ========================================
+def add_right(i, x):
+    r = next[i]
+    prev[x] = i
+    next[x] = r
+    next[i] = x
+    if r != -1:
+        prev[r] = x
+# ========================================
+# add_left
+# i の左に x を挿入
+# ========================================
+def add_left(i, x):
+    l = prev[i]
+    next[x] = i
+    prev[x] = l
+    prev[i] = x
+    if l != -1:
+        next[l] = x
+# ========================================
+# 使用例
+# ========================================
+# 0 - 1 - 2 - 3 - 4
+erase(2)
+# 0 - 1 - 3 - 4
+print(prev)
+print(next)
+
+# ========================================
+# MOD Combination
+# nCr % MOD nデカい版
+# ========================================
+MOD = 998244353
+MAX = 2 * 10**6 + 5
+
+fact = [1] * MAX
+inv_fact = [1] * MAX
+# 階乗
+for i in range(1, MAX):
+    fact[i] = fact[i - 1] * i % MOD
+# 逆元階乗
+inv_fact[-1] = pow(fact[-1], MOD - 2, MOD)
+for i in range(MAX - 1, 0, -1):
+    inv_fact[i - 1] = inv_fact[i] * i % MOD
+# nCr
+def comb(n, r):
+    if r < 0 or r > n:
+        return 0
+    return (
+        fact[n]
+        * inv_fact[r]
+        % MOD
+        * inv_fact[n - r]
+        % MOD
+    )
+# ========================================
+n小さい版
+# ========================================
+MOD = 998244353
+MAXR = 10**6 + 5
+fact = [1] * MAXR
+inv_fact = [1] * MAXR
+for i in range(1, MAXR):
+    fact[i] = fact[i - 1] * i % MOD
+inv_fact[-1] = pow(fact[-1], MOD - 2, MOD)
+for i in range(MAXR - 1, 0, -1):
+    inv_fact[i - 1] = inv_fact[i] * i % MOD
+def comb_large_n(n, r):
+    if r < 0 or r > n:
+        return 0
+    num = 1
+    for i in range(r):
+        num = num * ((n - i) % MOD) % MOD
+    return num * inv_fact[r] % MOD
+
+
+
+#アルファベット
+ord('a')   # 97
+ord('A')   # 65
+ord('0')   # 48
+
+chr(97)    # 'a'
+chr(65)    # 'A'
+
+x = ord(c) - ord('a')
+c = chr(x + ord('a'))
+
+from string import ascii_lowercase
+
+print(ascii_lowercase)
+# abcdefghijklmnopqrstuvwxyz
+
+from collections import Counter
+cnt = Counter(S)
+
+{
+    'a': 5,
+    'b': 2,
+    ...
+}
+cnt.values()
+cnt.items()
+cnt.most_common()
+
+# =========================
+# dict
+# =========================
+
+d = {"a": 10, "b": 20}
+
+d[x] = d.get(x, 0) + 1 #dict[x] += 1の代わりになる
+
+# key / value
+d.keys()          # dict_keys(["a", "b"])
+d.values()        # dict_values([10, 20])
+d.items()         # [("a", 10), ("b", 20)] 的なもの
+
+# key と value を同時に取り出す
+for k, v in d.items():
+    print(k, v)
+
+# key だけ
+for k in d:
+    print(k)
+
+# value だけ
+for v in d.values():
+    print(v)
+
+# 存在確認
+if "a" in d:
+    ...
+
+# 取得
+d["a"]            # なければ KeyError
+d.get("a")        # なければ None
+d.get("a", 0)     # なければ 0
+
+# 追加・更新
+d["c"] = 30
+
+# 削除
+del d["a"]
+v = d.pop("b")
+
+# 個数
+len(d)
+
+# ソート
+sorted(d)                     # keyをソートしたlist
+sorted(d.items())             # (key, value)でソート
+sorted(d.items(), key=lambda x: x[1])  # valueでソート
+
+# ========================================
+# グラフ：BFS（最短距離、辺の重みがすべて1）
+# ========================================
+from collections import deque
+
+# G[u] = uから移動できる頂点のリスト
+dist = [-1] * N
+dist[s] = 0
+q = deque([s])
+
+while q:
+    v = q.popleft()
+    for to in G[v]:
+        if dist[to] == -1:
+            dist[to] = dist[v] + 1
+            q.append(to)
+
+# dist[v] = 頂点sからvまでの最短距離
+# 到達不能なら -1
+
+
+# ========================================
+# グラフ：Dijkstra（辺の重みが非負）
+# ========================================
+import heapq
+
+# G[u] = [(v, cost), ...]
+INF = 10**18
+dist = [INF] * N
+dist[s] = 0
+hq = [(0, s)]
+
+while hq:
+    d, v = heapq.heappop(hq)
+    if d != dist[v]:
+        continue
+
+    for to, cost in G[v]:
+        nd = d + cost
+        if nd < dist[to]:
+            dist[to] = nd
+            heapq.heappush(hq, (nd, to))
+
+# 到達不能なら INF のまま
+# 負の重みがある場合は使用不可
+
+
+# ========================================
+# グラフ：0-1 BFS（辺の重みが0または1）
+# ========================================
+from collections import deque
+
+# G[u] = [(v, cost), ...]  costは0または1
+INF = 10**18
+dist = [INF] * N
+dist[s] = 0
+q = deque([s])
+
+while q:
+    v = q.popleft()
+
+    for to, cost in G[v]:
+        nd = dist[v] + cost
+        if nd < dist[to]:
+            dist[to] = nd
+            if cost == 0:
+                q.appendleft(to)
+            else:
+                q.append(to)
+
+
+# ========================================
+# グラフ：トポロジカルソート（Kahn法）
+# ========================================
+from collections import deque
+
+# G[u] = uから出る辺の行き先
+indeg = [0] * N
+for u in range(N):
+    for v in G[u]:
+        indeg[v] += 1
+
+q = deque(v for v in range(N) if indeg[v] == 0)
+order = []
+
+while q:
+    v = q.popleft()
+    order.append(v)
+
+    for to in G[v]:
+        indeg[to] -= 1
+        if indeg[to] == 0:
+            q.append(to)
+
+# len(order) == N ならDAG
+# len(order) < N なら有向閉路あり
+# orderはトポロジカル順
+
+
+# ========================================
+# グラフ：SCC（強連結成分分解、反復Kosaraju法）
+# ========================================
+# G[u] = uから出る辺の行き先
+# RG[v] = vに入る辺を逆向きにしたグラフ
+RG = [[] for _ in range(N)]
+for u in range(N):
+    for v in G[u]:
+        RG[v].append(u)
+
+# 1回目：DFSの帰りがけ順
+seen = [False] * N
+order = []
+
+for s in range(N):
+    if seen[s]:
+        continue
+
+    seen[s] = True
+    stack = [(s, 0)]
+
+    while stack:
+        v, i = stack[-1]
+
+        if i == len(G[v]):
+            order.append(v)
+            stack.pop()
+            continue
+
+        to = G[v][i]
+        stack[-1] = (v, i + 1)
+
+        if not seen[to]:
+            seen[to] = True
+            stack.append((to, 0))
+
+# 2回目：逆グラフで成分を割り当てる
+comp = [-1] * N
+C = 0
+
+for s in reversed(order):
+    if comp[s] != -1:
+        continue
+
+    comp[s] = C
+    stack = [s]
+
+    while stack:
+        v = stack.pop()
+
+        for to in RG[v]:
+            if comp[to] == -1:
+                comp[to] = C
+                stack.append(to)
+
+    C += 1
+
+# comp[v] = 頂点vのSCC番号
+# C = SCCの個数
+# SCC番号はトポロジカル順に割り当てられる
+# 同じSCCか：comp[u] == comp[v]
+
+
+# ========================================
+# グラフ：二部グラフ判定（BFSで2色塗り）
+# ========================================
+# Gは無向グラフ
+color = [-1] * N
+ok = True
+
+for s in range(N):
+    if color[s] != -1:
+        continue
+
+    color[s] = 0
+    q = deque([s])
+
+    while q:
+        v = q.popleft()
+
+        for to in G[v]:
+            if color[to] == -1:
+                color[to] = 1 - color[v]
+                q.append(to)
+            elif color[to] == color[v]:
+                ok = False
+
+# ok == True なら二部グラフ
+
+
+# ========================================
+# 累積和：1次元
+# ========================================
+# aの区間[l, r)の和
+S = [0] * (N + 1)
+for i in range(N):
+    S[i + 1] = S[i] + a[i]
+
+# 区間和
+sum_lr = S[r] - S[l]
+
+
+# ========================================
+# 累積和：2次元
+# ========================================
+# h行w列のグリッド a
+S = [[0] * (w + 1) for _ in range(h + 1)]
+
+for i in range(h):
+    for j in range(w):
+        S[i + 1][j + 1] = (
+            S[i][j + 1] + S[i + 1][j]
+            - S[i][j] + a[i][j]
+        )
+
+# 半開区間 [y1, y2) × [x1, x2) の長方形和
+res = (
+    S[y2][x2]
+    - S[y1][x2]
+    - S[y2][x1]
+    + S[y1][x1]
+)
+
+
+# ========================================
+# いもす法：1次元の区間加算
+# ========================================
+# 長さNの配列で、区間[l, r)にxを加算
+imos = [0] * (N + 1)
+
+imos[l] += x
+imos[r] -= x
+
+# すべての区間加算を記録した後
+a = [0] * N
+cur = 0
+for i in range(N):
+    cur += imos[i]
+    a[i] = cur
+
+
+# ========================================
+# 座標圧縮
+# ========================================
+# aの値を、大小関係を保った0始まりの順位に変換
+vals = sorted(set(a))
+rank = {x: i for i, x in enumerate(vals)}
+compressed = [rank[x] for x in a]
+
+# 元の値に戻す：vals[compressed[i]]
+# BITやセグメント木で値の範囲を縮める際に便利
+
+
+# ========================================
+# ダブリング：関数をk回適用
+# ========================================
+# nxt[v] = vから1回移動した先
+# k回移動した先を求める
+LOG = max(1, k.bit_length())
+nxt2 = [nxt[:]]
+
+for j in range(1, LOG):
+    prev = nxt2[-1]
+    nxt2.append([prev[prev[v]] for v in range(N)])
+
+v = s
+for j in range(LOG):
+    if (k >> j) & 1:
+        v = nxt2[j][v]
+
+# v = 関数をk回適用した結果
+# 前処理O(N log k)、クエリO(log k)
+
+
+# ========================================
+# 文字列：Z-algorithm
+# ========================================
+def z_algorithm(s):
+    n = len(s)
+    z = [0] * n
+    z[0] = n
+    l = r = 0
+
+    for i in range(1, n):
+        if i < r:
+            z[i] = min(r - i, z[i - l])
+
+        while i + z[i] < n and s[z[i]] == s[i + z[i]]:
+            z[i] += 1
+
+        if i + z[i] > r:
+            l = i
+            r = i + z[i]
+
+    return z
+
+# z[i] = sとs[i:]の最長共通接頭辞の長さ
+# O(len(s))
+
+
+# ========================================
+# 数学：素数列挙（エラトステネスの篩）
+# ========================================
+# 0以上MAX以下の素数判定
+MAX = 10**6
+is_prime = [True] * (MAX + 1)
+is_prime[0] = is_prime[1] = False
+
+for i in range(2, int(MAX**0.5) + 1):
+    if is_prime[i]:
+        for j in range(i * i, MAX + 1, i):
+            is_prime[j] = False
+
+primes = [i for i in range(2, MAX + 1) if is_prime[i]]
+
+
+# ========================================
+# 数学：最小素因数（SPF）による素因数分解
+# ========================================
+# 1以上MAX以下の整数を素因数分解
+MAX = 10**6
+spf = list(range(MAX + 1))
+
+for i in range(2, int(MAX**0.5) + 1):
+    if spf[i] == i:
+        for j in range(i * i, MAX + 1, i):
+            if spf[j] == j:
+                spf[j] = i
+
+def factorize(n):
+    res = []
+    while n > 1:
+        p = spf[n]
+        cnt = 0
+        while n % p == 0:
+            n //= p
+            cnt += 1
+        res.append((p, cnt))
+    return res
+
+# factorize(60) -> [(2, 2), (3, 1), (5, 1)]
+# n <= MAX の場合に使用
+
+
+# ========================================
+# ビット全探索（2^N通り）
+# ========================================
+# N個の要素について、各要素を「選ぶ / 選ばない」で全探索
+# bitが1なら選ぶ、0なら選ばない
+
+for bit in range(1 << N):
+    for i in range(N):
+        if (bit >> i) & 1:
+            # i番目の要素を選ぶ
+            ...
+        else:
+            # i番目の要素を選ばない
+            ...
+
+# bitの範囲：0 ～ 2^N - 1
+# 計算量：O(N * 2^N)
+
+
+# ========================================
+# ビット全探索：選んだ要素だけ処理
+# ========================================
+for bit in range(1 << N):
+    selected = []
+
+    for i in range(N):
+        if (bit >> i) & 1:
+            selected.append(i)
+
+    # selected = 選んだ要素の添字一覧
+    ...
+
+
+# ========================================
+# ビット判定
+# ========================================
+if (bit >> i) & 1:
+    # i番目のビットが1
+    ...
+
+if not ((bit >> i) & 1):
+    # i番目のビットが0
+    ...
+
+# bit & (1 << i) でも判定可能
+if bit & (1 << i):
+    ...
+
+
+# ========================================
+# ビット全探索：選んだ要素の合計
+# ========================================
+ans = 0
+
+for bit in range(1 << N):
+    total = 0
+
+    for i in range(N):
+        if (bit >> i) & 1:
+            total += A[i]
+
+    ans = max(ans, total)
+
+
+# ========================================
+# 部分集合の列挙（bit全探索）
+# ========================================
+mask = []
+for i in range(N):
+    mask.append(1 << i)
+
+for i in range(1 << N):
+    pass
+    for j in range(N):
+        r = mask[j] & i
+        pass
