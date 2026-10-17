@@ -1,0 +1,526 @@
+from __future__ import annotations
+
+import random
+import sys
+from typing import Generic, Iterable, Iterator, List, Optional, Tuple, TypeVar
+
+# ============================================================
+# Implicit Treap（区間反転可能な平衡二分木）
+# ------------------------------------------------------------
+# 「配列」をそのままバランス木として持ち、
+#   ・任意位置への挿入 / 削除
+#   ・任意区間 [l, r) の反転
+#   ・任意位置の参照 / 更新
+# を すべて期待 O(log N) で行うためのデータ構造です。
+#
+# キー（インデックス）を明示的にノードへ持たせず、
+# 「部分木のサイズ」から相対的に位置を決定するため
+# "Implicit"（暗黙のキー）Treap と呼ばれます。
+#
+# 平衡は各ノードに乱数優先度（priority）を持たせ、
+# 「優先度に関しては二分ヒープ、値に関しては二分探索木」
+# という二重の制約（Treap = Tree + Heap）を保つことで実現します。
+# 優先度がランダムであるため、期待される木の高さは O(log N) になります。
+#
+# 再帰の深さについて:
+#   split / merge はいずれも「木の高さ」に比例する回数しか再帰しません。
+#   優先度がランダムである限り期待高さは O(log N) なので、
+#   N = 2*10^5 程度でも通常は問題になりません。
+#   ただし理論上は稀に高さが伸びるケースもあるため、
+#   念のため再帰上限を引き上げています。
+# ============================================================
+
+sys.setrecursionlimit(1 << 20)
+
+T = TypeVar("T")
+
+
+class _Node(Generic[T]):
+    """
+    Treap の内部ノード。
+
+    競技プログラミングでは「ノード生成コスト」がボトルネックになりやすいため、
+    __slots__ を使って余分な dict を持たせず、メモリと生成速度を節約する。
+    """
+
+    __slots__ = ("value", "priority", "left", "right", "size", "rev")
+
+    def __init__(self, value: T, priority: int) -> None:
+        self.value: T = value
+        self.priority: int = priority
+        self.left: Optional["_Node[T]"] = None
+        self.right: Optional["_Node[T]"] = None
+        # size: 自分を根とする部分木に含まれる要素数。
+        # 「implicit key（暗黙のインデックス）」を求めるために必須の情報。
+        self.size: int = 1
+        # rev: この部分木全体が「反転待ち」であることを示す遅延フラグ。
+        # 実際に子を入れ替える処理は _push() で行う（遅延評価 / 遅延伝播）。
+        self.rev: bool = False
+
+
+def _size(node: Optional[_Node[T]]) -> int:
+    """None を長さ 0 の空木として扱うためのヘルパー。"""
+    return node.size if node is not None else 0
+
+
+def _update(node: _Node[T]) -> None:
+    """
+    ノードの付属情報（ここでは size）を子の情報から再計算する。
+
+    なぜ必要か:
+        Treap は子を書き換えるたびに「親の size が古いまま」になってしまう。
+        split / merge のように木の形が変わる操作の直後には、
+        必ずこの _update を呼び、size を最新の状態に保つ必要がある。
+        これを怠ると implicit key（何番目の要素か）の計算がずれ、
+        非常に見つけにくいバグ（インデックスがずれる）を引き起こす。
+
+    呼び出しルール:
+        「子を書き換えた直後」に必ず呼ぶ、と徹底しておくと事故が起きにくい。
+    """
+    node.size = 1 + _size(node.left) + _size(node.right)
+
+
+def _push(node: Optional[_Node[T]]) -> None:
+    """
+    遅延評価されている「反転フラグ」を子に伝播させる（遅延伝播 / push down）。
+
+    なぜ必要か:
+        reverse 操作は本来「区間内の全ノードについて左右の子を交換する」処理だが、
+        毎回全ノードを書き換えていては O(区間長) かかってしまい、
+        Treap を使う意味がなくなる。
+        そこで「このノード以下は反転されている」という情報だけを
+        ノードに rev フラグとして持たせておき（O(1)）、
+        実際にその部分木の中身を見に行く（= 子へ降りる）タイミングで
+        初めて 1 段分だけ反転処理を実際に行う。これが遅延伝播。
+
+    処理内容:
+        1. 左右の子を交換する（区間反転の実体）。
+        2. 子自身の反転フラグを反転させる
+           （「自分の反転」と「子に伝播すべき反転」がXORで合成される）。
+        3. 自分の rev フラグはクリアする（すでに反映済みのため）。
+
+    呼び出しルール:
+        「node の左右の子を参照する（node.left / node.right を使う）前」には
+        必ずこの _push を呼ぶ。これを忘れると、
+        反転されているはずの部分木が反転されないまま参照され、
+        値が入れ替わらないというバグになる。
+    """
+    if node is not None and node.rev:
+        node.left, node.right = node.right, node.left
+        if node.left is not None:
+            node.left.rev ^= True
+        if node.right is not None:
+            node.right.rev ^= True
+        node.rev = False
+
+
+def _split(
+    node: Optional[_Node[T]], key: int
+) -> Tuple[Optional[_Node[T]], Optional[_Node[T]]]:
+    """
+    node を根とする部分木を、
+    「先頭から key 個」と「残り」の 2 つの部分木に分割する。
+
+    なぜこの処理が必要か:
+        insert / erase / reverse はすべて
+        「ある区間だけを切り出して独立に扱いたい」という要求に帰着する。
+        Implicit Treap では明示的なキーを持たないため、
+        「部分木のサイズ」を頼りに何番目で切るかを決める必要があり、
+        それを担うのがこの split である。
+        split と merge の組み合わせだけで、挿入・削除・反転が
+        すべて O(log N) で表現できるようになる。
+
+    アルゴリズム:
+        1. 反転の遅延フラグを解消してから（_push）、左部分木のサイズを見る。
+        2. key が左部分木のサイズ以下なら、切れ目は左部分木の中にある。
+           左部分木を再帰的に分割し、自分は右側の木に残す。
+        3. そうでなければ、自分自身は左側の木に残り、
+           右部分木を再帰的に分割する（インデックスは
+           「自分 1 個分」だけずらして渡す）。
+        4. 子を書き換えたので、必ず _update で size を更新する。
+
+    戻り値:
+        (先頭 key 個からなる部分木, 残りの部分木)
+    """
+    if node is None:
+        return None, None
+
+    _push(node)  # 子を見る前に反転フラグを解消しておく
+    left_size = _size(node.left)
+
+    if key <= left_size:
+        # 切れ目は左部分木の中（またはちょうど境界）にある
+        left, node.left = _split(node.left, key)
+        _update(node)
+        return left, node
+    else:
+        # 自分自身と左部分木は先頭側に含まれる。
+        # 右部分木側では「自分 1 個分」を引いたインデックスで分割する。
+        node.right, right = _split(node.right, key - left_size - 1)
+        _update(node)
+        return node, right
+
+
+def _merge(
+    left: Optional[_Node[T]], right: Optional[_Node[T]]
+) -> Optional[_Node[T]]:
+    """
+    「left の全要素」+「right の全要素」の順序を保ったまま 1 つの木に併合する。
+
+    前提条件（呼び出し側が保証すること）:
+        left に含まれる要素は、right に含まれる要素より
+        「すべて手前（インデックスが小さい）」であること。
+        （split で分割した 2 つの木を戻すときなどに使うため、
+          この前提は自然に満たされる。）
+
+    なぜこの処理が必要か:
+        split で切り離した部分木を「間に新しい要素を挟んで」
+        あるいは「反転させてから」つなぎ直すために merge が要る。
+        split と merge が対になることで、
+        任意の位置への挿入・削除・任意区間の反転が実現できる。
+
+    アルゴリズム（Treap の核心部分）:
+        - 優先度 (priority) が高い方を根にする。
+          こうすることで、優先度がランダムである限り
+          木の高さが期待 O(log N) に保たれる（＝平衡が保たれる）。
+        - left の優先度が高い場合、left を根にし、
+          left の右部分木と right を再帰的に merge して
+          left.right に付け替える
+          （left の右側 = left の中で最も右＝インデックスが大きい側、
+            そこに right をすべてつなげるのが順序として正しい）。
+        - right の優先度が高い場合はその逆（対称）に処理する。
+        - 子を書き換えたら必ず _update で size を更新する。
+        - 子へ降りる前には必ず _push して反転フラグを解消しておく
+          （そうしないと反転済みのはずの部分木の左右を
+            誤って参照してしまう）。
+    """
+    if left is None:
+        return right
+    if right is None:
+        return left
+
+    if left.priority > right.priority:
+        _push(left)
+        left.right = _merge(left.right, right)
+        _update(left)
+        return left
+    else:
+        _push(right)
+        right.left = _merge(left, right.left)
+        _update(right)
+        return right
+
+
+class ImplicitTreap(Generic[T]):
+    """
+    区間反転可能な平衡二分木（Implicit Treap）を用いた
+    「挿入・削除・反転がすべて O(log N) のデータ構造」のラッパークラス。
+
+    内部的には _Node による木構造を保持し、
+    利用者は配列（list）とほぼ同じ感覚で扱えるようにする。
+
+    計算量（N: 要素数）:
+        build       : O(N log N)  （expected）
+        insert      : O(log N)    （expected）
+        erase       : O(log N)    （expected）
+        reverse     : O(log N)    （expected）
+        get / set   : O(log N)    （expected）
+        tolist      : O(N)
+        len         : O(1)
+
+    注意（優先度が「乱数」であることについて）:
+        Treap の平衡性は乱数優先度によって「確率的に」保証される。
+        敵対的な入力によって最悪計算量に落ちることを避けるため、
+        Python 標準の random ではなく random.Random に固定シードを与えず、
+        実行のたびに変わる乱数源を用いている。
+        （AtCoder のようにジャッジ環境が固定される場では、
+          これにより木の高さが偏るような入力を作られるリスクを下げられる。）
+    """
+
+    __slots__ = ("_root", "_rng")
+
+    def __init__(self, values: Optional[Iterable[T]] = None) -> None:
+        """
+        コンストラクタ。
+
+        引数:
+            values: 初期化に使う配列（省略可能）。
+                    与えた場合、その順序を保ったまま木を構築する（build 相当）。
+        """
+        # 乱数生成器はインスタンスごとに持つ。
+        # モジュールレベルの random を直接使うと、
+        # 複数の ImplicitTreap を同時に使う際や、
+        # 他のライブラリと乱数を共有してしまう際に
+        # 挙動が読みにくくなるため、専用の Random インスタンスを持たせる。
+        self._rng: random.Random = random.Random()
+        self._root: Optional[_Node[T]] = None
+        if values is not None:
+            self._root = self._build(list(values))
+
+    # ------------------------------------------------------------
+    # 構築
+    # ------------------------------------------------------------
+    def _build(self, values: List[T]) -> Optional[_Node[T]]:
+        """
+        配列から Treap を O(N log N)（期待）で構築する。
+
+        なぜ「1個ずつ insert」ではなくこの方法を使うか:
+            1 個ずつ末尾に insert していく方法でも正しく構築はできるが、
+            分割統治で構築したほうが定数倍が軽く、
+            再帰の形も split/merge と揃っているため理解しやすい。
+
+        アルゴリズム:
+            配列を中央で 2 分割し、それぞれを再帰的に木にしてから
+            merge で結合する。
+            ただし優先度はランダムなので、実際にどちらが根になるかは
+            priority 次第であり、常にこの分割位置が根になるわけではない
+            （merge の中で優先度比較が行われるため、結果は正しい Treap になる）。
+        """
+        if not values:
+            return None
+        mid = len(values) // 2
+        left = self._build(values[:mid])
+        right = self._build(values[mid + 1:])
+        center = _Node(values[mid], self._rng.getrandbits(30))
+        center.left = left
+        center.right = right
+        _update(center)
+        return center
+
+    # ------------------------------------------------------------
+    # 内部ユーティリティ
+    # ------------------------------------------------------------
+    def _normalize_index(self, index: int) -> int:
+        """
+        負のインデックス（Python の list と同様、末尾からの指定）を
+        0 以上の通常のインデックスに変換する。
+
+        範囲外であれば IndexError を送出し、
+        「範囲外アクセスに気づかないまま木が壊れる」事故を防ぐ。
+        """
+        n = len(self)
+        if index < 0:
+            index += n
+        if not (0 <= index < n):
+            raise IndexError(
+                f"index out of range: index={index - n if index >= n else index}, size={n}"
+            )
+        return index
+
+    # ------------------------------------------------------------
+    # 公開 API
+    # ------------------------------------------------------------
+    def __len__(self) -> int:
+        """要素数を返す。ノードの size を根から O(1) で取得できる。"""
+        return _size(self._root)
+
+    def get(self, index: int) -> T:
+        """
+        index 番目（0-index）の要素を取得する。
+
+        負の index は Python の list と同様に「末尾から」の指定として扱う。
+        """
+        index = self._normalize_index(index)
+        return self._get_node(self._root, index).value
+
+    def _get_node(self, node: Optional[_Node[T]], index: int) -> _Node[T]:
+        """
+        index 番目のノードを探す内部関数。
+
+        implicit key（暗黙のインデックス）は「左部分木のサイズ」から
+        その場で計算する。実際のキーをノードに保存していないので、
+        木の形が変わっても index の付け替えが不要という利点がある。
+        """
+        assert node is not None
+        _push(node)  # 子（の値）を見る前に反転を解消する
+        left_size = _size(node.left)
+        if index < left_size:
+            return self._get_node(node.left, index)
+        elif index == left_size:
+            return node
+        else:
+            return self._get_node(node.right, index - left_size - 1)
+
+    def set(self, index: int, value: T) -> None:
+        """
+        index 番目（0-index）の要素を value に更新する。
+
+        負の index は Python の list と同様に「末尾から」の指定として扱う。
+        """
+        index = self._normalize_index(index)
+        node = self._get_node(self._root, index)
+        node.value = value
+        # 値そのものを書き換えただけで木の形は変わっていないため、
+        # size の再計算（_update）は不要。
+        # ただし将来的に「区間和」等の集約値を持たせる拡張をする場合は、
+        # この経路上の祖先ノードすべてで集約値の再計算が必要になる点に注意。
+
+    def __getitem__(self, index: int) -> T:
+        """tree[i] の形で index 番目の要素を取得するための糖衣構文。"""
+        return self.get(index)
+
+    def __setitem__(self, index: int, value: T) -> None:
+        """tree[i] = value の形で index 番目を更新するための糖衣構文。"""
+        self.set(index, value)
+
+    def insert(self, index: int, value: T) -> None:
+        """
+        index の位置（0-index）に value を挿入する。
+
+        挿入後、value は配列の index 番目に来る
+        （既存の index 番目以降の要素は 1 つ後ろにずれる）。
+        index == len(self) を指定すると末尾への追加になる
+        （list.insert と同じ仕様）。
+
+        負の index は指定不可（挿入位置が曖昧になるため）。
+        list.insert に倣い、範囲外チェックは緩め
+        （index > len(self) の場合は末尾扱いにはせず ValueError とする）。
+
+        実装方針:
+            1. index の位置で木を [0, index) と [index, N) に split する。
+            2. 新しいノードを 1 個作る。
+            3. left + 新ノード + right の順で merge し直す。
+        """
+        n = len(self)
+        if not (0 <= index <= n):
+            raise IndexError(f"index out of range: index={index}, size={n}")
+
+        left, right = _split(self._root, index)
+        new_node = _Node(value, self._rng.getrandbits(30))
+        self._root = _merge(_merge(left, new_node), right)
+
+    def erase(self, index: int) -> T:
+        """
+        index 番目（0-index）の要素を削除し、その値を返す。
+
+        負の index は Python の list と同様に「末尾から」の指定として扱う。
+
+        実装方針:
+            1. index の位置で [0, index), [index, index+1), [index+1, N)
+               の 3 つに split する。
+            2. 真ん中の 1 要素（削除対象）を取り出す。
+            3. 残りの 2 つを merge して木を再構成する。
+        """
+        index = self._normalize_index(index)
+
+        left, mid_right = _split(self._root, index)
+        mid, right = _split(mid_right, 1)
+        assert mid is not None
+        value = mid.value
+        self._root = _merge(left, right)
+        return value
+
+    def reverse(self, l: int, r: int) -> None:  # noqa: E741
+        """
+        半開区間 [l, r) を反転する（l を含み r を含まない）。
+
+        例: tree = [1, 2, 3, 4, 5] に対して reverse(1, 4) を行うと
+            [1, 4, 3, 2, 5] になる（index 1, 2, 3 の部分が反転される）。
+
+        l == r の場合は「空区間の反転」であり、何もしない
+        （エラーにはしない。list のスライスと同様の扱い）。
+
+        なぜ「実際に要素を並べ替える」のではなく
+        「フラグを立てるだけ」で済むのか:
+            区間 [l, r) を 1 つの部分木として split で切り出したうえで、
+            その部分木の根に rev フラグを立てるだけにとどめる。
+            実際に子を交換する処理は、
+            その部分木の中身に「アクセスが必要になったとき」
+            （_push が呼ばれるとき）まで遅延される。
+            これにより reverse 自体は
+            「split 2 回 + merge 2 回 + フラグ 1 個立てる」だけの
+            O(log N) 処理として実現できる。
+        """
+        n = len(self)
+        if not (0 <= l <= r <= n):
+            raise IndexError(f"range out of bounds: l={l}, r={r}, size={n}")
+        if l == r:
+            return  # 空区間なので何もしない
+
+        left, mid_right = _split(self._root, l)
+        mid, right = _split(mid_right, r - l)
+        if mid is not None:
+            # 部分木 mid 全体を「反転待ち」としてマークする。
+            # 実際の交換は次にこの部分木へアクセスしたとき（_push）に行われる。
+            mid.rev ^= True
+        self._root = _merge(_merge(left, mid), right)
+
+    def tolist(self) -> List[T]:
+        """
+        木の中身を、現在の並び順のまま Python の list に変換して返す。
+
+        中身をすべて走査するため O(N) かかる。
+        デバッグ出力や、最終的な答えの整形に利用する想定。
+        """
+        result: List[T] = []
+        self._inorder(self._root, result)
+        return result
+
+    def _inorder(self, node: Optional[_Node[T]], result: List[T]) -> None:
+        """
+        中順走査（in-order traversal）で全要素を result に詰め込む。
+
+        ここでも「子を見る前に _push する」という鉄則を必ず守る。
+        これを怠ると、反転フラグが立ったままの部分木を
+        反転されていない状態で読み出してしまい、
+        tolist の結果と実際の論理的な並びがずれてしまう。
+        """
+        if node is None:
+            return
+        _push(node)
+        self._inorder(node.left, result)
+        result.append(node.value)
+        self._inorder(node.right, result)
+
+    def __iter__(self) -> Iterator[T]:
+        """for x in tree: の形で走査できるようにするための糖衣構文。"""
+        return iter(self.tolist())
+
+    def __repr__(self) -> str:
+        """デバッグ用の repr。中身を list として表示する。"""
+        return f"ImplicitTreap({self.tolist()!r})"
+
+
+# ------------------------------------------------------------
+# 使用例（チートシート）
+# ------------------------------------------------------------
+# 競技中にこの下のコメントだけ見れば使い方が分かるようにしてある。
+# 引数はすべて 0-index。
+
+# 初期化（配列から構築。O(N log N)）
+# tree = ImplicitTreap([1, 2, 3, 4, 5])
+
+# 空の状態から始めたい場合
+# tree = ImplicitTreap()
+
+# 配列（list）へ変換して取り出す。O(N)
+# print(tree.tolist())
+
+# 要素数を取得。O(1)
+# print(len(tree))
+
+# i番目（0-index）の要素を取得。負の index は末尾からの指定。
+# print(tree[3])
+# print(tree.get(3))  # 上と同じ
+
+# i番目（0-index）の要素を100に更新
+# tree[3] = 100
+# tree.set(3, 100)  # 上と同じ
+
+# pos の位置（0-index）に value を挿入。
+# 既存の pos 番目以降は 1 つ後ろにずれる。
+# pos == len(tree) なら末尾に追加される。
+# tree.insert(pos, value)
+
+# pos 番目（0-index）の要素を削除し、その値を返す。
+# removed_value = tree.erase(pos)
+
+# 半開区間 [l, r) を反転（l を含み r を含まない）。l == r なら何もしない。
+# tree.reverse(l, r)
+
+# for 文でそのまま走査できる（内部で tolist() を呼ぶので O(N)）
+# for x in tree:
+#     print(x)
+
+# repr でデバッグ表示
+# print(tree)
